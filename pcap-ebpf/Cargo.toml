@@ -1,0 +1,18 @@
+[package]
+name = "pcap-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pcap-common = { path = "../pcap-common" }
+
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+network-types = "0.0.7"
+
+[build-dependencies]
+which = { workspace = true }
+
+[[bin]]
+name = "pcap"
+path = "src/main.rs"
