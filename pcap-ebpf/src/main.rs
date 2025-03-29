@@ -1,8 +1,12 @@
 #![no_std]
 #![no_main]
 
-use aya_ebpf::{bindings::xdp_action, macros::xdp, programs::XdpContext};
-use aya_log_ebpf::info;
+use aya_ebpf::{
+    bindings::xdp_action,
+    macros::{map, xdp},
+    maps::PerfEventArray,
+    programs::XdpContext,
+};
 use core::mem;
 use network_types::{
     eth::{EthHdr, EtherType},
@@ -10,6 +14,10 @@ use network_types::{
     tcp::TcpHdr,
     udp::UdpHdr,
 };
+use pcap_common::{PacketInfo, Protocol};
+
+#[map]
+static EVENTS: PerfEventArray<PacketInfo> = PerfEventArray::<PacketInfo>::new(0);
 
 #[inline(always)]
 fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
@@ -48,31 +56,24 @@ fn try_pcap(ctx: XdpContext) -> Result<u32, ()> {
     let dst_addr: u32 = u32::from_be(unsafe { (*iphdr).dst_addr });
 
     // ip -> tcp/udp
-    let (src_port, dst_port) = match unsafe { (*iphdr).proto } {
+    let (src_port, dst_port, proto) = match unsafe { (*iphdr).proto } {
         IpProto::Tcp => {
             let tcphdr: *const TcpHdr = ptr_at(&ctx, cursor)?;
             let source = u16::from_be(unsafe { (*tcphdr).source });
             let dest = u16::from_be(unsafe { (*tcphdr).dest });
-            (source, dest)
+            (source, dest, Protocol::TCP)
         }
         IpProto::Udp => {
             let udphdr: *const UdpHdr = ptr_at(&ctx, cursor)?;
             let source = u16::from_be(unsafe { (*udphdr).source });
             let dest = u16::from_be(unsafe { (*udphdr).dest });
-            (source, dest)
+            (source, dest, Protocol::UDP)
         }
         _ => return Ok(xdp_action::XDP_PASS),
     };
 
-    info!(
-        &ctx,
-        "{:i}\t{}\t{:i}\t{}", src_addr, src_port, dst_addr, dst_port
-    );
-    Ok(xdp_action::XDP_PASS)
-}
+    let packet_info = PacketInfo::new(src_addr, dst_addr, src_port, dst_port, proto);
+    EVENTS.output(&ctx, &packet_info, 0);
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+    Ok(xdp_action::XDP_PASS)
 }

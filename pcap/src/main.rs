@@ -1,9 +1,15 @@
 use anyhow::Context as _;
-use aya::programs::{Xdp, XdpFlags};
+use aya::{
+    maps::AsyncPerfEventArray,
+    programs::{Xdp, XdpFlags},
+    util::online_cpus,
+};
 use clap::Parser;
 #[rustfmt::skip]
 use log::{debug, warn};
-use tokio::signal;
+use bytes::BytesMut;
+use pcap_common::PacketInfo;
+use tokio::{signal, task};
 
 #[derive(Debug, Parser)]
 struct Opt {
@@ -48,6 +54,30 @@ async fn main() -> anyhow::Result<()> {
 
     let ctrl_c = signal::ctrl_c();
     println!("Waiting for Ctrl-C...");
+
+    println!("S-Address\tS-Port\tD-Address\tD-Port\tProtocol");
+
+    let mut perf_array = AsyncPerfEventArray::try_from(ebpf.take_map("EVENTS").unwrap())?;
+
+    for cpu_id in online_cpus().map_err(|(_, e)| e)? {
+        let mut buf = perf_array.open(cpu_id, None)?;
+
+        task::spawn(async move {
+            let mut buffers = (0..10)
+                .map(|_| BytesMut::with_capacity(1024))
+                .collect::<Vec<_>>();
+
+            loop {
+                let events = buf.read_events(&mut buffers).await.unwrap();
+                for i in 0..events.read {
+                    let buf = &mut buffers[i];
+                    let ptr = buf.as_ptr() as *const PacketInfo;
+                    let packet_info = unsafe { ptr.read_unaligned() };
+                    println!("{packet_info}");
+                }
+            }
+        });
+    }
     ctrl_c.await?;
     println!("Exiting...");
 
