@@ -56,7 +56,7 @@ fn try_pcap(ctx: XdpContext) -> Result<u32, ()> {
     let dst_addr: u32 = u32::from_be(unsafe { (*iphdr).dst_addr });
 
     // ip -> tcp/udp
-    let (src_port, dst_port, proto) = match unsafe { (*iphdr).proto } {
+    let (src_port, dst_port, protocol) = match unsafe { (*iphdr).proto } {
         IpProto::Tcp => {
             let tcphdr: *const TcpHdr = ptr_at(&ctx, cursor)?;
             let source = u16::from_be(unsafe { (*tcphdr).source });
@@ -72,8 +72,14 @@ fn try_pcap(ctx: XdpContext) -> Result<u32, ()> {
         _ => return Ok(xdp_action::XDP_PASS),
     };
 
-    let packet_info = PacketInfo::new(src_addr, dst_addr, src_port, dst_port, proto);
+    let packet_info = PacketInfo::new(src_addr, dst_addr, src_port, dst_port, protocol);
     EVENTS.output(&ctx, &packet_info, 0);
 
     Ok(xdp_action::XDP_PASS)
+}
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
 }

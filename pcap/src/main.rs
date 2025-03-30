@@ -54,7 +54,6 @@ async fn main() -> anyhow::Result<()> {
 
     let ctrl_c = signal::ctrl_c();
     println!("Waiting for Ctrl-C...");
-
     println!("S-Address\tS-Port\tD-Address\tD-Port\tProtocol");
 
     let mut perf_array = AsyncPerfEventArray::try_from(ebpf.take_map("EVENTS").unwrap())?;
@@ -69,8 +68,7 @@ async fn main() -> anyhow::Result<()> {
 
             loop {
                 let events = buf.read_events(&mut buffers).await.unwrap();
-                for i in 0..events.read {
-                    let buf = &mut buffers[i];
+                for buf in buffers.iter_mut().take(events.read) {
                     let ptr = buf.as_ptr() as *const PacketInfo;
                     let packet_info = unsafe { ptr.read_unaligned() };
                     println!("{packet_info}");
