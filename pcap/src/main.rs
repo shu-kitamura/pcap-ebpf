@@ -77,7 +77,6 @@ async fn main() -> anyhow::Result<()> {
         });
     }
     ctrl_c.await?;
-    println!("Exiting...");
 
     Ok(())
 }
